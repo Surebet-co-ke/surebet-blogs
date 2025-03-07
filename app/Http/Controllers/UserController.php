@@ -9,27 +9,13 @@ use Illuminate\Support\Facades\Auth;
 
 class UserController extends Controller
 {
-    // Register a new user
-    public function register(Request $request)
+    // Show the login form
+    public function showLoginForm()
     {
-        $request->validate([
-            'name' => 'required|string',
-            'email' => 'required|email|unique:users',
-            'phone' => 'nullable|string',
-            'password' => 'required|string|min:6',
-        ]);
-
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'password' => Hash::make($request->password),
-        ]);
-
-        return response()->json($user, 201);
+        return view('auth.login');
     }
 
-    // Login a user
+    // Handle login
     public function login(Request $request)
     {
         $request->validate([
@@ -39,35 +25,68 @@ class UserController extends Controller
 
         // Attempt to authenticate the user
         if (Auth::attempt(['email' => $request->email, 'password' => $request->password])) {
-            $user = Auth::user();
-            $token = $user->createToken('authToken')->plainTextToken; // Generate a token for the user
-            return response()->json([
-                'user' => $user,
-                'token' => $token,
-            ], 200);
+            $request->session()->regenerate(); // Regenerate session to prevent fixation attacks
+            return redirect()->route('home'); // Redirect to home page after login
         }
 
         // If authentication fails
-        return response()->json(['message' => 'Invalid credentials'], 401);
+        return back()->withErrors([
+            'email' => 'The provided credentials do not match our records.',
+        ]);
     }
 
-    // Get the authenticated user's profile
-    public function getProfile()
+    // Show the registration form
+    public function showRegisterForm()
+    {
+        return view('auth.register');
+    }
+
+    // Handle registration
+    public function register(Request $request)
+    {
+        // Debug the request data
+        \Log::info('Registration Request Data:', $request->all());
+    
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+    
+        // Debug after validation
+        \Log::info('Validation Passed. Creating User...');
+    
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => Hash::make($request->password),
+        ]);
+    
+        // Debug after user creation
+        \Log::info('User Created:', $user->toArray());
+    
+        // Log in the user after registration
+        Auth::login($user);
+    
+        return redirect()->route('home')->with('success', 'Registration successful!');
+    }
+
+    // Show the user profile
+    public function profile()
     {
         $user = Auth::user(); // Get the authenticated user
-        return response()->json($user);
+        return view('users.profile', compact('user'));
     }
 
-    // Update the authenticated user's profile
+    // Update the user profile
     public function updateProfile(Request $request)
     {
         $user = Auth::user(); // Get the authenticated user
 
         $request->validate([
-            'name' => 'sometimes|string',
-            'email' => 'sometimes|email|unique:users,email,' . $user->id,
-            'phone' => 'nullable|string',
-            'password' => 'sometimes|string|min:6',
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|string|email|max:255|unique:users,email,' . $user->id,
+            'password' => 'sometimes|string|min:8|confirmed',
         ]);
 
         // Update the user's details
@@ -76,9 +95,6 @@ class UserController extends Controller
         }
         if ($request->has('email')) {
             $user->email = $request->email;
-        }
-        if ($request->has('phone')) {
-            $user->phone = $request->phone;
         }
         if ($request->has('password')) {
             $user->password = Hash::make($request->password);
@@ -86,35 +102,40 @@ class UserController extends Controller
 
         $user->save();
 
-        return response()->json($user);
+        return redirect()->route('profile')->with('success', 'Profile updated successfully!');
     }
 
-    // Get all users (admin only)
-    public function getAllUsers()
+    // Show the user management page (admin only)
+    public function manageUsers()
     {
-        $users = User::all();
-        return response()->json($users);
+        $users = User::all(); // Fetch all users
+        return view('users.manage', compact('users'));
     }
 
-    // Get a user by ID (admin only)
-    public function getUserById($id)
+   // Show the edit user form (admin only)
+    public function editUser($id)
     {
-        $user = User::findOrFail($id);
-        return response()->json($user);
+        $user = User::findOrFail($id); // Fetch the user by ID
+        return view('users.edit', compact('user'));
     }
 
-    // Update a user by ID (admin only)
+    // Update a user (admin only)
     public function updateUser(Request $request, $id)
     {
-        $user = User::findOrFail($id);
+        // Debug the request data
+        \Log::info('Update User Request Data:', $request->all());
+
+        $user = User::findOrFail($id); // Fetch the user by ID
 
         $request->validate([
-            'name' => 'sometimes|string',
-            'email' => 'sometimes|email|unique:users,email,' . $user->id,
-            'phone' => 'nullable|string',
-            'password' => 'sometimes|string|min:4',
+            'name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|string|email|max:255|unique:users,email,' . $user->id,
+            'password' => 'sometimes|string|min:8|confirmed',
             'role' => 'sometimes|in:admin,user',
         ]);
+
+        // Debug after validation
+        \Log::info('Validation Passed. Updating User...');
 
         // Update the user's details
         if ($request->has('name')) {
@@ -122,9 +143,6 @@ class UserController extends Controller
         }
         if ($request->has('email')) {
             $user->email = $request->email;
-        }
-        if ($request->has('phone')) {
-            $user->phone = $request->phone;
         }
         if ($request->has('password')) {
             $user->password = Hash::make($request->password);
@@ -135,14 +153,26 @@ class UserController extends Controller
 
         $user->save();
 
-        return response()->json($user);
-    }
+        // Debug after saving
+        \Log::info('User Updated:', $user->toArray());
 
-    // Delete a user by ID (admin only)
+        return redirect()->route('users.manage')->with('success', 'User updated successfully!');
+    }
+    
+    // Delete a user (admin only)
     public function deleteUser($id)
     {
-        $user = User::findOrFail($id);
+        $user = User::findOrFail($id); // Fetch the user by ID
         $user->delete();
-        return response()->json(['message' => 'User deleted successfully']);
+        return redirect()->route('users.manage')->with('success', 'User deleted successfully!');
+    }
+
+    // Handle logout
+    public function logout(Request $request)
+    {
+        Auth::logout(); // Log out the user
+        $request->session()->invalidate(); // Invalidate the session
+        $request->session()->regenerateToken(); // Regenerate the CSRF token
+        return redirect()->route('home'); // Redirect to home page after logout
     }
 }
