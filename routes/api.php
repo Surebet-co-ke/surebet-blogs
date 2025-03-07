@@ -2,6 +2,8 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\BlogController;
 
 /*
 |--------------------------------------------------------------------------
@@ -14,6 +16,28 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
+// Public routes
+Route::post('/register', [UserController::class, 'register']);
+Route::post('/login', [UserController::class, 'login']);
+
+// Protected routes (require authentication)
+Route::middleware('auth:sanctum')->group(function () {
+    // User routes
+    Route::get('/profile', [UserController::class, 'getProfile']);
+    Route::put('/profile', [UserController::class, 'updateProfile']);
+
+    // Admin-only routes
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/users', [UserController::class, 'getAllUsers']);
+        Route::get('/users/{id}', [UserController::class, 'getUserById']);
+        Route::put('/users/{id}', [UserController::class, 'updateUser']);
+        Route::delete('/users/{id}', [UserController::class, 'deleteUser']);
+    });
+
+    // Blog routes
+    Route::get('/blogs', [BlogController::class, 'getAllBlogs']);
+    Route::get('/blogs/{id}', [BlogController::class, 'getBlogById']);
+    Route::post('/blogs', [BlogController::class, 'createBlog']);
+    Route::put('/blogs/{id}', [BlogController::class, 'updateBlog']);
+    Route::delete('/blogs/{id}', [BlogController::class, 'deleteBlog']);
 });
